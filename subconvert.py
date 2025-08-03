@@ -1,75 +1,79 @@
 #!/usr/bin/env python3
 
-import pyocr
-import os
 import sys
-import json
 from argparse import ArgumentParser
-from PIL import Image
-from glob import glob
 
 import ffmpeg
-import subtitles
+#  import subtitles
 
-FRAME_RATE = 4
+try:
+    import ocr
+except ImportError:
+    ocr = None
 
-
-# ffmpeg -i video.mkv
-#  -f lavfi -i "color=size=1920x1080:rate=10:color=black"
-#  -filter_complex "[1:v][0:s]overlay,mpdecimate[out]"
-#  -map "[out]"
-#  -an
-#  -vsync vfr
-#  -frame_pts true ocrtest/frames_%06d.png
+SUBP_CODECS = ('hdmv_pgs_subtitle', 'dvd_subtitle', 'dvb_subtitle')
 
 
 def main(args):
 
-    tool = pyocr.get_available_tools()[0]
-#      lang = tool.get_available_languages()[0]
+    info = ffmpeg.info(args.input)
+    sub_streams = []
+    video_stream = None
+    for stream in info['streams']:
+        match stream['codec_type']:
+            case 'subtitle':
+                sub_streams.append(stream)
+            case 'video':
+                video_stream = video_stream or stream
 
-    ff = ffmpeg.Ffmpeg('work/%06d.png').skip('audio')
-    ff.filter_complex("[1:v][0:s]overlay,mpdecimate[out]")
-    ff.input('video.mkv', None)
-    ff.input(f"color=size=720x480:rate={FRAME_RATE}:color=black", None).format('lavfi')
-    ff.map('[out]')
-    ff.time_range(0, 23 * 60)
-    ff.extra_args('-vsync', 'vfr', '-frame_pts', '1')
+    if not sub_streams:
+        sys.stderr.write('No subtitles found in the input file, exiting...')
+        exit(-1)
 
-    if not os.path.exists('work'):
-        os.mkdir('work')
-    print('Exporting subtitles...')
-    ff.run()
-    print('Reading Subtitles...')
+    if not args.output and not args.output_format:
+        sys.stderr.write(
+                'No output file or output format specified, aborting...')
+        exit(-1)
 
-    images = sorted(glob('work/*.png'))
+    if args.output_format == 'ass':
+        args.output_format = 'ssa'
+    if not args.output_format:
+        match args.output[-4:]:
+            case '.srt':
+                args.output_format = 'srt'
+            case '.ssa' | '.ass':
+                args.output_format = 'ssa'
 
-    with open('video.ass', 'w') as outfile:
+    input_stream = sub_streams[args.subtitle_stream]
+    if len(sub_streams) > 1:
+        sys.stderr.write(f'Using subtitle stream {args.subtitle_stream} - '
+                         f'{input_stream["codec_long_name"]}\n')
+    if input_stream['codec_name'] in SUBP_CODECS:
+        if not ocr:
+            sys.stderr.write('OCR unsupported - make sure you have pyocr and '
+                             'pytesseract installed.\n')
+            sys.stderr.write('Unable to convert subpicture subtitles.')
+            exit(-1)
+        subs = ocr.read_subtitles(args.input, input_stream)
+        subs.style('Default', args.ssa_font, fontsize=36, marginv=40)
+    else:
+        sys.stderr.write('Text subtitles are not yet supported for input. '
+                         'Coming soon!')
+        exit(-1)
 
-        subs = subtitles.Subtitles()
-        subs.style('Default', 'MS Gothic', fontsize=36, marginv = 40)
+    with open(args.output) if args.output else sys.stdout as outputfile:
+        match args.output_format:
+            case 'ssa':
+                outputfile.write(subs.ssa())
+            case 'srt':
+                outputfile.write(subs.srt())
 
-        for i, image in enumerate(images):
-            sys.stdout.write(f'{int((i + 1) / len(images) * 100):3d}%\r')
-            sys.stdout.flush()
-            img = Image.open(image)
-            img.convert('L')
-            builder = pyocr.builders.LineBoxBuilder()
-            builder.tesseract_flags.extend(['--oem', '1'])
-            lineboxes = tool.image_to_string(img, lang='eng', builder=builder)
-            start_time = int(image[-10:-4]) / FRAME_RATE
-            if len(images) <= i+1:
-                end_time = start_time + 5
-            else:
-                end_time = int(images[i+1][-10:-4]) / FRAME_RATE
-            content = ''
-            for linebox in lineboxes:
-                ((x1, y1), (x2, y2)) = linebox.position
-                content += f'{linebox.content}\n'
-            if content:
-                subs.entry(content, start_time, end_time)
-            os.remove(image)
-        outfile.write(subs.ssa())
-    os.rmdir('work')
 
-main(None)
+if __name__ == '__main__':
+    argparser = ArgumentParser()
+    argparser.add_argument('-i', '--input', required=True)
+    argparser.add_argument('-s', '--subtitle-stream', type=int, default=0)
+    argparser.add_argument('-o', '--output', default=None)
+    argparser.add_argument('-f', '--output-format', default=None)
+    argparser.add_argument('--ssa-font', default='MS Gothic')
+    main(argparser.parse_args())

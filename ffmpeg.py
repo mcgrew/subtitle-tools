@@ -90,7 +90,6 @@ class Ffmpeg:
         return command
 
     def run(self):
-        print(' '.join(self.get_command()))
         proc = subprocess.Popen(
                 self.get_command(),  # stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL)

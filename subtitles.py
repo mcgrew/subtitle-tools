@@ -2,17 +2,10 @@
 from io import StringIO
 
 
-def fix_text(text):
-    return (text.strip()
-            .replace('| ', 'I ')
-            .replace('/ ', 'I ')
-            )
-
-
 class SubtitleEntry:
     def __init__(self, text, start, end, style='Default', name='',
                  marked=0, marginl=0, marginr=0, marginv=0, effect=''):
-        self.text = fix_text(text)
+        self.text = text
         self.start = start
         self.end = end
         self.marked = int(marked)
@@ -33,9 +26,9 @@ class SubtitleEntry:
                 f'{sec % 60:02d},{int(ms * 1000):03d}')
 
     def srt(self):
-        return (f'{self._ts(self.start, ",")} --> '
-                f'{self._ts(self.content["end"], ",")}\n'
-                f'{self.content["text"]}\n')
+        return (f'{self._ts(self.start, "srt")} --> '
+                f'{self._ts(self.end, "srt")}\n'
+                f'{self.text}\n')
 
     def ssa(self):
         return (f'Dialogue: Marked={self.marked},{self._ts(self.start)},'
@@ -53,7 +46,7 @@ class SubtitleSyle:
                  tertiarycolour=0x000000, backcolour=0x000000,
                  bold=-1, italic=0, borderstyle=1, outline=2,
                  shadow=3, alignment=2, marginl=20, marginr=20,
-                 marginv=10, alphalevel=0, encoding=1):
+                 marginv=20, alphalevel=0, encoding=1):
         self.name = name
         self.fontname = fontname
         self.fontsize = int(fontsize)
@@ -87,7 +80,7 @@ class SubtitleSyle:
 class Subtitles:
     def __init__(self, width=720, height=480):
         self.entries: list[SubtitleEntry] = []
-        self.styles: list[SubtitleSyle] = []
+        self.styles: dict[str, SubtitleSyle] = {}
         self.playresx = int(width)
         self.playresy = int(height)
 
@@ -99,22 +92,14 @@ class Subtitles:
 #                   marginv=10, alphalevel=0, encoding=1):
 
     def entry(self, text, start, end, style='Default', name='',
-              marked=0, marginl=0, marginr=0, marginv=10, effect=''):
+              marked=0, marginl=0, marginr=0, marginv=0, effect=''):
         self.entries.append(SubtitleEntry(text, start, end, style, name,
                                           marked, marginl, marginr, marginv,
                                           effect))
 
-    def style(self, name, fontname, fontsize=24,
-              primarycolour=0xffffff, secondarycolour=0xffffff,
-              tertiarycolour=0x000000, backcolour=0x000000,
-              bold=-1, italic=0, borderstyle=1, outline=2,
-              shadow=3, alignment=2, marginl=20, marginr=20,
-              marginv=10, alphalevel=0, encoding=1):
-        return self.styles.append(SubtitleSyle(
-            name, fontname, fontsize, primarycolour, secondarycolour,
-            tertiarycolour, backcolour, bold, italic, borderstyle, outline,
-            shadow, alignment, marginl, marginr, marginv, alphalevel,
-            encoding))
+    def style(self, name, fontname, **kwargs):
+        s = self.styles[name] = SubtitleSyle(name, fontname, **kwargs)
+        return s
 
     def srt(self):
         buf = StringIO()
@@ -144,7 +129,7 @@ class Subtitles:
                   'SecondaryColour, TertiaryColour, BackColour, Bold, '
                   'Italic, BorderStyle, Outline, Shadow, Alignment, '
                   'MarginL, MarginR, MarginV, AlphaLevel, Encoding\n')
-        for style in self.styles:
+        for style in self.styles.values():
             buf.write(f'{style}\n')
         buf.write('\n[Events]\n')
         buf.write('Format: Marked, Start, End, Style, Name, MarginL, MarginR, '
