@@ -30,12 +30,12 @@ def main(args):
         sys.stderr.write('No subtitles found in the input file, exiting...')
         exit(-1)
 
-    if not args.output and not args.output_format:
-        sys.stderr.write(
-                'No output file or output format specified, aborting...')
-        exit(-1)
-
-    if args.output_format == 'ass':
+#      if not args.output and not args.output_format:
+#          sys.stderr.write(
+#                  'No output file or output format specified, aborting...')
+#          exit(-1)
+#
+    if args.output_format in ('ass', None):
         args.output_format = 'ssa'
     if not args.output_format:
         match args.output[-4:]:
@@ -55,13 +55,12 @@ def main(args):
             sys.stderr.write('Unable to convert subpicture subtitles.')
             exit(-1)
         subs = ocr.read_subtitles(args.input, input_stream)
-        subs.style('Default', args.ssa_font, fontsize=36, marginv=40)
     else:
         sys.stderr.write('Text subtitles are not yet supported for input. '
                          'Coming soon!')
         exit(-1)
 
-    with open(args.output) if args.output else sys.stdout as outputfile:
+    with open(args.output, 'w') if args.output else sys.stdout as outputfile:
         match args.output_format:
             case 'ssa':
                 outputfile.write(subs.ssa())

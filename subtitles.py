@@ -4,7 +4,8 @@ from io import StringIO
 
 class SubtitleEntry:
     def __init__(self, text, start, end, style='Default', name='',
-                 marked=0, marginl=0, marginr=0, marginv=0, effect=''):
+                 marked=0, marginl=0, marginr=0, marginv=0, effect='',
+                 size=36, color=(255, 255, 255)):
         self.text = text
         self.start = start
         self.end = end
@@ -15,6 +16,11 @@ class SubtitleEntry:
         self.marginr = int(marginr)
         self.marginv = int(marginv)
         self.effect = effect
+        self.size = size
+        self.color = self._color_hex(color)
+
+    def _color_hex(self, color: tuple[int]):
+        return f'{color[2]:02X}{color[1]:02X}{color[0]:02X}'
 
     def _ts(self, sec: float, format='ssa'):
         ms = (sec % 1)
@@ -40,10 +46,22 @@ class SubtitleEntry:
         return self.text == subtitle_entry.text
 
 
+class SubComment:
+    def __init__(self, text):
+        self.start = self.end = 0
+        self.text = text
+
+    def srt(self):
+        return ''
+
+    def ssa(self):
+        return f'; {self.text}\n'
+
+
 class SubtitleSyle:
     def __init__(self, name, fontname, fontsize=24,
-                 primarycolour=0xffffff, secondarycolour=0xffffff,
-                 tertiarycolour=0x000000, backcolour=0x000000,
+                 primarycolour='FFFFFF', secondarycolour='FFFFFF',
+                 tertiarycolour='000000', backcolour='000000',
                  bold=-1, italic=0, borderstyle=1, outline=2,
                  shadow=3, alignment=2, marginl=20, marginr=20,
                  marginv=20, alphalevel=0, encoding=1):
@@ -68,8 +86,8 @@ class SubtitleSyle:
 
     def __str__(self):
         return (f'Style: {self.name},{self.fontname},{self.fontsize},'
-                f'&H{self.primarycolour:06x},&H{self.secondarycolour:06x},'
-                f'&H{self.tertiarycolour:06x},&H{self.backcolour:06x},'
+                f'&H{self.primarycolour},&H{self.secondarycolour},'
+                f'&H{self.tertiarycolour},&H{self.backcolour},'
                 f'{self.bold},' f'{self.italic},'
                 f'{self.borderstyle},{self.outline},'
                 f'{self.shadow},{self.alignment},{self.marginl},'
@@ -78,11 +96,11 @@ class SubtitleSyle:
 
 
 class Subtitles:
-    def __init__(self, width=720, height=480):
+    def __init__(self, width=1920, height=1080):
         self.entries: list[SubtitleEntry] = []
         self.styles: dict[str, SubtitleSyle] = {}
-        self.playresx = int(width)
-        self.playresy = int(height)
+        self.width = int(width)
+        self.height = int(height)
 
 #      def __init__(self, name, fontname, fontsize=24,
 #                   primarycolour=0xffffff, secondarycolour=0xffffff,
@@ -91,11 +109,11 @@ class Subtitles:
 #                   shadow=3, alignment=2, marginl=20, marginr=20,
 #                   marginv=10, alphalevel=0, encoding=1):
 
-    def entry(self, text, start, end, style='Default', name='',
-              marked=0, marginl=0, marginr=0, marginv=0, effect=''):
-        self.entries.append(SubtitleEntry(text, start, end, style, name,
-                                          marked, marginl, marginr, marginv,
-                                          effect))
+    def entry(self, entry: SubtitleEntry):
+        self.entries.append(entry)
+
+    def comment(self, text):
+        self.entries.append(SubComment(text))
 
     def style(self, name, fontname, **kwargs):
         s = self.styles[name] = SubtitleSyle(name, fontname, **kwargs)
@@ -120,8 +138,8 @@ class Subtitles:
         buf.write('; \n')
         buf.write('ScriptType: v4.00\n')
         buf.write('Collisions: Normal\n')
-        buf.write('PlayResX: 720\n')
-        buf.write('PlayResY: 480\n')
+        buf.write(f'PlayResX: {self.width}\n')
+        buf.write(f'PlayResY: {self.height}\n')
         buf.write('Timer: 100.0000\n\n')
 
         buf.write('[V4 Styles]\n')
@@ -143,3 +161,9 @@ class Subtitles:
             buf.write(entry.ssa())
         buf.seek(0)
         return buf.read()
+
+    def dump(self, sub_format):
+        if sub_format == 'srt':
+            return self.srt()
+        else:
+            return self.ssa()
