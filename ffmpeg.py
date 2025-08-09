@@ -5,9 +5,9 @@ from shutil import which
 
 
 def info(filename: str):
-    ffprobe = subprocess.Popen(['ffprobe', '-show_chapters', '-show_streams',
-                                '-print_format', 'json', filename],
-                               stdout=subprocess.PIPE,
+    command = ['ffprobe', '-show_chapters', '-show_streams',
+               '-print_format', 'json', filename]
+    ffprobe = subprocess.Popen(command, stdout=subprocess.PIPE,
                                stderr=subprocess.DEVNULL)
     ffprobe.wait()
     return json.loads(ffprobe.stdout.read().decode('utf-8'))

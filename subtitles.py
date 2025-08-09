@@ -4,8 +4,7 @@ from io import StringIO
 
 class SubtitleEntry:
     def __init__(self, text, start, end, style='Default', name='',
-                 marked=0, marginl=0, marginr=0, marginv=0, effect='',
-                 size=36, color=(255, 255, 255)):
+                 marked=0, marginl=0, marginr=0, marginv=0, effect=''):
         self.text = text
         self.start = start
         self.end = end
@@ -16,11 +15,6 @@ class SubtitleEntry:
         self.marginr = int(marginr)
         self.marginv = int(marginv)
         self.effect = effect
-        self.size = size
-        self.color = self._color_hex(color)
-
-    def _color_hex(self, color: tuple[int]):
-        return f'{color[2]:02X}{color[1]:02X}{color[0]:02X}'
 
     def _ts(self, sec: float, format='ssa'):
         ms = (sec % 1)
@@ -58,7 +52,7 @@ class SubComment:
         return f'; {self.text}\n'
 
 
-class SubtitleSyle:
+class SubtitleStyle:
     def __init__(self, name, fontname, fontsize=24,
                  primarycolour='FFFFFF', secondarycolour='FFFFFF',
                  tertiarycolour='000000', backcolour='000000',
@@ -94,11 +88,27 @@ class SubtitleSyle:
                 f'{self.marginr},{self.marginv},{self.alphalevel},'
                 f'{self.encoding}')
 
+    def __eq__(self, style: 'SubtitleStyle'):
+        return (self.fontname == style.fontname and
+                self.fontsize == style.fontsize and
+                self.primarycolour == style.primarycolour and
+                self.secondarycolour == style.secondarycolour and
+                self.tertiarycolour == style.tertiarycolour and
+                self.backcolour == style.backcolour and
+                self.bold == style.bold and
+                self.shadow == style.shadow and
+                self.alignment == style.alignment and
+                self.marginl == style.marginl and
+                self.marginr == style.marginr and
+                self.marginv == style.marginv and
+                self.alphalevel == style.alphalevel and
+                self.encoding == style.encoding)
+
 
 class Subtitles:
     def __init__(self, width=1920, height=1080):
         self.entries: list[SubtitleEntry] = []
-        self.styles: dict[str, SubtitleSyle] = {}
+        self.styles: list[SubtitleStyle] = list()
         self.width = int(width)
         self.height = int(height)
 
@@ -115,9 +125,13 @@ class Subtitles:
     def comment(self, text):
         self.entries.append(SubComment(text))
 
-    def style(self, name, fontname, **kwargs):
-        s = self.styles[name] = SubtitleSyle(name, fontname, **kwargs)
-        return s
+    def style(self, **kwargs):
+        name = f'Style{len(self.styles)}'
+        style = SubtitleStyle(name, **kwargs)
+        if (style in self.styles):
+            return self.styles[self.styles.index(style)]
+        self.styles.append(style)
+        return style
 
     def srt(self):
         buf = StringIO()
@@ -147,7 +161,7 @@ class Subtitles:
                   'SecondaryColour, TertiaryColour, BackColour, Bold, '
                   'Italic, BorderStyle, Outline, Shadow, Alignment, '
                   'MarginL, MarginR, MarginV, AlphaLevel, Encoding\n')
-        for style in self.styles.values():
+        for style in self.styles:
             buf.write(f'{style}\n')
         buf.write('\n[Events]\n')
         buf.write('Format: Marked, Start, End, Style, Name, MarginL, MarginR, '
