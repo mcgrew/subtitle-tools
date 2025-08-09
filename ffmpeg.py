@@ -9,8 +9,9 @@ def info(filename: str):
                '-print_format', 'json', filename]
     ffprobe = subprocess.Popen(command, stdout=subprocess.PIPE,
                                stderr=subprocess.DEVNULL)
+    out, _ = ffprobe.communicate()
     ffprobe.wait()
-    return json.loads(ffprobe.stdout.read().decode('utf-8'))
+    return json.loads(out.decode('utf-8'))
 
 
 class Ffmpeg:
@@ -28,6 +29,7 @@ class Ffmpeg:
         self.extra_arguments = []
         self.start_time = 0
         self.end_time = 0
+        self.proc:subprocess.Popen = None
 
     def time_range(self, start: float | int = 0, end: float | int = 0):
         self.start_time = start
@@ -89,11 +91,23 @@ class Ffmpeg:
         command.append(self.output_file)
         return command
 
-    def run(self):
-        proc = subprocess.Popen(
-                self.get_command(),  # stdout=subprocess.DEVNULL,
+    def start(self):
+        self.proc = subprocess.Popen(
+                self.get_command(),  stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL)
-        proc.wait()
+
+    def wait(self):
+        if self.proc:
+            self.proc.wait()
+        self.proc = None
+
+    def is_running(self):
+        return self.proc.is_running()
+
+    def run(self):
+        if not self.proc:
+            self.start()
+        self.wait()
 
 
 class _Ffmpeg_input:
