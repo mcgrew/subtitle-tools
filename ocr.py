@@ -31,6 +31,18 @@ class TextLine:
                         .replace('| ', 'I ')
                         .replace('/ ', 'I '))
 
+    def __cmp__(self, textline):
+        if self.start < textline.start:
+            return -1
+        if self.start > textline.start:
+            return 1
+        return 0
+
+
+def has_descenders(text):
+    descenders = set('gjpqy,')
+    return bool(descenders.intersection(text))
+
 
 def getenv(name, default=None):
     val = os.getenv(name)
@@ -91,6 +103,9 @@ def read_image(image) -> Iterator[TextLine]:
     tool = pyocr.get_available_tools()[0]
 #      lang = tool.get_available_languages()[0]
     pil_img = Image.open(image)
+    (_, r), (_, g), (_, b) = pil_img.getextrema()
+    if sum((r, g, b)) < 192:  # there's no text here
+        return []
     builder = pyocr.builders.LineBoxBuilder()
     builder.tesseract_flags.extend(['--oem', '1'])
     lineboxes = tool.image_to_string(pil_img, lang='eng', builder=builder)
@@ -103,7 +118,12 @@ def read_image(image) -> Iterator[TextLine]:
         marginl = x1 - reduce_margin
         marginr -= reduce_margin
         marginv = pil_img.height - y2
-        size = int((y2 - y1) / 0.75)
+        size = y2 - y1
+        if has_descenders(linebox.content):
+            size = int(size * 1.33)
+        else:
+            marginv -= int(size * 0.3)
+            size = int(size * 1.6)
         cropped = pil_img.crop((x1, y1, x2, y2))
         (_, r), (_, g), (_, b) = cropped.getextrema()
         yield TextLine(start_time, linebox.content, size,
@@ -136,7 +156,8 @@ def sort_values(values: list[int]) -> list[int]:
     return frequency_sort
 
 
-def normalize_values(lines: list[TextLine], threshold: int = 5) -> None:
+def normalize_values(lines: list[TextLine], height: int = 1080,
+                     threshold: float = 0.008) -> None:
     """
     Find the most frequently occurring values for size, margin, color, and
     normalize the lines to those values if they are close.
@@ -149,16 +170,15 @@ def normalize_values(lines: list[TextLine], threshold: int = 5) -> None:
 
     for line in lines:
         for margin in marginsL:
-            if abs(line.marginl - margin) < threshold:
+            if abs(line.marginl - margin) < height * threshold:
                 line.marginl = margin
                 break
         for margin in marginsR:
-            if abs(line.marginr - margin) < threshold:
+            if abs(line.marginr - margin) < height * threshold:
                 line.marginr = margin
                 break
         for margin in marginsV:
-            if abs(line.marginv - margin) < threshold:
-                line.size += int((line.marginv - margin) / 0.75)
+            if abs(line.marginv - margin) < height * threshold:
                 line.marginv = margin
                 break
         for size in sizes:
@@ -166,9 +186,9 @@ def normalize_values(lines: list[TextLine], threshold: int = 5) -> None:
                 line.size = size
                 break
         for color in colors:
-            if (abs(line.color[0] - color[0]) < threshold * 4 and
-                    abs(line.color[1] - color[1]) < threshold * 4 and
-                    abs(line.color[2] - color[2]) < threshold * 4):
+            if (abs(line.color[0] - color[0]) < threshold * 255 and
+                    abs(line.color[1] - color[1]) < threshold * 255 and
+                    abs(line.color[2] - color[2]) < threshold * 255):
                 line.color = color
                 break
 
@@ -188,7 +208,7 @@ def read_subtitles(infile, stream):
     lines = []
     for line in read_subs('work'):
         lines.append(line)
-    normalize_values(lines)
+    normalize_values(lines, stream['height'])
     for line in lines:
         color = f'{line.color[2]:02X}{line.color[1]:02X}{line.color[0]:02X}'
         style = subs.style(fontname='Roboto', fontsize=line.size,
