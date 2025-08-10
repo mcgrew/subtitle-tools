@@ -56,7 +56,7 @@ class SubtitleStyle:
     def __init__(self, name, fontname, fontsize=24,
                  primarycolour='FFFFFF', secondarycolour='FFFFFF',
                  tertiarycolour='000000', backcolour='000000',
-                 bold=-1, italic=0, borderstyle=1, outline=2,
+                 bold=0, italic=0, borderstyle=1, outline=2,
                  shadow=3, alignment=2, marginl=20, marginr=20,
                  marginv=20, alphalevel=0, encoding=1):
         self.name = name

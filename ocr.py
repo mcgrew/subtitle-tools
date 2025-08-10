@@ -38,7 +38,31 @@ class TextLine:
             return -1
         if self.start > textline.start:
             return 1
+        if self.marginv < textline.marginv:
+            return -1
+        if self.marginv > textline.marginv:
+            return 1
         return 0
+
+    def is_mergeable_with(self, line: 'TextLine'):
+        """
+        Determines whether 2 lines that are above one another should be merged
+        into one.
+        """
+        return (self.start == line.start and self.end == line.end
+                and self.size == line.size and self.color == line.color
+                and self.marginv - line.size - line.marginv < line.size//10)
+
+    def continues_to(self, line: 'TextLine'):
+        """
+        Determines whether the passed in TextLine is a continuation of this
+        one.
+        """
+        return (abs(self.end - line.start) < 0.1
+                and self.content == line.content and self.size == line.size
+                and self.color == line.color and self.marginv == line.marginv
+                and self.marginl == line.marginl
+                and self.marginr == line.marginr)
 
 
 def has_descenders(text):
@@ -129,8 +153,6 @@ def read_image(image) -> Iterator[TextLine]:
             size = int(size * 1.6)
         cropped = pil_img.crop((x1, y1, x2, y2))
         (_, r), (_, g), (_, b) = cropped.getextrema()
-#          yield TextLine(start_time, linebox.content, size,
-#                         marginl, marginr, marginv, (r, g, b))
         results.append(TextLine(start_time, linebox.content, size,
                                 marginl, marginr, marginv, (r, g, b)))
     sys.stderr.write('=')
@@ -160,47 +182,69 @@ def read_subs(directory) -> Iterator[TextLine]:
     sys.stderr.write('\n')
 
 
-def sort_values(values: list[int]) -> list[int]:
-    frequency_sort = list(set(values))
-    frequency_sort.sort(key=values.count, reverse=True)
-    return frequency_sort
+def freq_sort(values: list[int]) -> list[int]:
+    all_values = list(set(values))
+    all_values.sort(key=values.count, reverse=True)
+    return all_values
 
 
 def normalize_values(lines: list[TextLine], height: int = 1080,
-                     threshold: float = 0.008) -> None:
+                     tolerance: float = 0.008) -> None:
     """
     Find the most frequently occurring values for size, margin, color, and
     normalize the lines to those values if they are close.
     """
-    sizes = sort_values([t.size for t in lines])
-    marginsL = sort_values([t.marginl for t in lines])
-    marginsR = sort_values([t.marginr for t in lines])
-    marginsV = sort_values([t.marginv for t in lines])
-    colors = sort_values([t.color for t in lines])
+    sizes = freq_sort([t.size for t in lines])
+    marginsL = freq_sort([t.marginl for t in lines])
+    marginsR = freq_sort([t.marginr for t in lines])
+    marginsV = freq_sort([t.marginv for t in lines])
+    colors = freq_sort([t.color for t in lines])
 
     for line in lines:
         for margin in marginsL:
-            if abs(line.marginl - margin) < height * threshold:
+            if abs(line.marginl - margin) < height * tolerance:
                 line.marginl = margin
                 break
         for margin in marginsR:
-            if abs(line.marginr - margin) < height * threshold:
+            if abs(line.marginr - margin) < height * tolerance:
                 line.marginr = margin
                 break
         for margin in marginsV:
-            if abs(line.marginv - margin) < height * threshold:
+            if abs(line.marginv - margin) < height * tolerance:
                 line.marginv = margin
                 break
         for size in sizes:
-            if abs(line.size - size) < threshold:
+            if abs(line.size - size) < height * tolerance:
                 line.size = size
                 break
         for color in colors:
-            if (abs(line.color[0] - color[0]) < threshold * 255 and
-                    abs(line.color[1] - color[1]) < threshold * 255 and
-                    abs(line.color[2] - color[2]) < threshold * 255):
+            if (abs(line.color[0] - color[0]) < 16
+                    and abs(line.color[1] - color[1]) < 16
+                    and abs(line.color[2] - color[2]) < 16):
                 line.color = color
                 break
+
+
+def merge_lines(lines: list[TextLine]):
+    for i, line1 in enumerate(lines):
+        if line1.end < 0:
+            continue
+        for line2 in lines[i+1:]:
+            if line2.end < 0:
+                continue
+            if line1.is_mergeable_with(line2):
+                line1.content += '\\N' + line2.content
+                line1.marginv = line2.marginv
+                line2.start = line2.end = -1.0  # mark this line for later
+    for i, line1 in enumerate(lines):
+        if line1.end < 0:
+            continue
+        for line2 in lines[i+1:]:
+            if line2.end < 0:
+                continue
+            if line1.continues_to(line2):
+                line1.end = line2.end
+                line2.start = line2.end = -1.0  # mark this line for later
 
 
 def read_subtitles(infile, stream):
@@ -215,11 +259,10 @@ def read_subtitles(infile, stream):
         sys.stderr.write('Exporting subpicture subtitles...\n')
 
     dump_subs(infile, stream)
-    lines = []
-    for line in read_subs(WORKDIR):
-        lines.append(line)
+    lines = list(read_subs(WORKDIR))
     normalize_values(lines, stream['height'])
-    for line in lines:
+    merge_lines(lines)
+    for line in [s for s in lines if s.end >= 0]:
         color = f'{line.color[2]:02X}{line.color[1]:02X}{line.color[0]:02X}'
         style = subs.style(fontname='Roboto', fontsize=line.size,
                            primarycolour=color)  # , marginl=line.marginl,
@@ -227,14 +270,12 @@ def read_subtitles(infile, stream):
         subs.entry(SubtitleEntry(line.content, line.start, line.end,
                                  style.name, marginl=line.marginl,
                                  marginr=line.marginr, marginv=line.marginv))
-#          print(line)
 
     if skip_cleanup:
         sys.stderr.write('Skipping cleanup..\n')
     else:
         os.rmdir(WORKDIR)
     sys.stderr.write('OCR Complete. Please check the output for accuracy.\n')
-#      postprocess(subs)
     return subs
 
 # ffmpeg -i video.mkv
