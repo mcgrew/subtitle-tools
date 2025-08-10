@@ -31,7 +31,7 @@ class TextLine:
         # fix the text to account for common errors
         self.content = (self.content.strip()
                         .replace('| ', 'I ')
-                        .replace('/ ', 'I ').
+                        .replace('/ ', 'I ')
                         .replace('1?', 'I?'))
 
     def __cmp__(self, textline):
