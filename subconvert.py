@@ -74,5 +74,5 @@ if __name__ == '__main__':
     argparser.add_argument('-s', '--subtitle-stream', type=int, default=0)
     argparser.add_argument('-o', '--output', default=None)
     argparser.add_argument('-f', '--output-format', default=None)
-    argparser.add_argument('--ssa-font', default='MS Gothic')
+    argparser.add_argument('--ssa-font', default='Roboto')
     main(argparser.parse_args())

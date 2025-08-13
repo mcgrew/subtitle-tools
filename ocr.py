@@ -125,22 +125,22 @@ def dump_subs(infile, stream):
 def verify_text(text: str, cropped: Image):
     scaled = cropped.resize((int(cropped.width * 0.75),
                              int(cropped.height * 0.75)))
-    sys.stderr.write(f'\nChecking: {text}')
+    sys.stderr.write(f'Checking: {text}\n')
     tool = pyocr.get_available_tools()[0]
     builder = pyocr.builders.TextBuilder()
     builder.tesseract_flags.extend(['--oem', '1'])
     text2 = tool.image_to_string(scaled, lang='eng', builder=builder)
     if text == text2:
-        sys.stderr.write(f'\nVerified: {text}')
+        sys.stderr.write(f'Verified: {text}\n')
         return text
     scaled = cropped.reduce(2)
     builder.tesseract_flags.extend(['--oem', '1'])
     text3 = tool.image_to_string(scaled, lang='eng', builder=builder)
     if text3 and text3 == text2:
-        sys.stderr.write(f'\nCorrected: {text} -> {text3}')
+        sys.stderr.write(f'Corrected: {text} -> {text3}\n')
         return text3
     if text3 != text:
-        sys.stderr.write(f'\nCould not verify text: {text}, {text2}, {text3}')
+        sys.stderr.write(f'Could not verify text: {text}, {text2}, {text3}\n')
     return text
 
 
@@ -177,8 +177,6 @@ def read_image(image: str, oem: int = 1) -> Iterator[TextLine]:
         marginl = x1 - reduce_margin
         marginr -= reduce_margin
         marginv = (pil_img.height - y2)
-        cropped = pil_img.crop((x1, y1, x2, y2))
-        (_, r), (_, g), (_, b) = cropped.getextrema()
         text = linebox.content
 
         if text.upper() == text or '0' in text:
@@ -190,8 +188,16 @@ def read_image(image: str, oem: int = 1) -> Iterator[TextLine]:
         else:
             marginv -= int(size * 0.3)
             size = int(size * 1.6)
-        results.append(TextLine(start_time, text, size,
-                                marginl, marginr, marginv, (r, g, b)))
+        # find the most frequent color that's not dark
+        cropped = pil_img.crop((x1, y1, x2, y2))
+        colors = [c for c in cropped.getdata() if sum(c) >= 400]
+        sorted_colors = sorted([c for c in set(colors)], key=colors.count, reverse=True)
+        if sorted_colors[0][0] == 1:
+            cropped.save(image.replace('work', 'cropped'))
+#          sorted_colors.sort(key=colors.count)
+#          sys.stderr.write(str(sorted_colors[:10]) + '\n')
+        results.append(TextLine(start_time, text, size, marginl, marginr,
+                                marginv, sorted_colors[0]))
 #      sys.stderr.write('=')
 #      sys.stderr.flush()
     return results
@@ -255,9 +261,9 @@ def normalize_values(lines: list[TextLine], height: int = 1080,
                 line.size = size
                 break
         for color in colors:
-            if (abs(line.color[0] - color[0]) < 16
-                    and abs(line.color[1] - color[1]) < 16
-                    and abs(line.color[2] - color[2]) < 16):
+            if (abs(line.color[0] - color[0]) < 32
+                    and abs(line.color[1] - color[1]) < 32
+                    and abs(line.color[2] - color[2]) < 32):
                 line.color = color
                 break
 

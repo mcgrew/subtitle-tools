@@ -55,7 +55,7 @@ class SubComment:
 class SubtitleStyle:
     def __init__(self, name, fontname, fontsize=24,
                  primarycolour='FFFFFF', secondarycolour='FFFFFF',
-                 tertiarycolour='000000', backcolour='000000',
+                 outlinecolour='000000', backcolour='000000',
                  bold=0, italic=0, borderstyle=1, outline=2,
                  shadow=3, alignment=2, marginl=20, marginr=20,
                  marginv=20, alphalevel=0, encoding=1):
@@ -64,7 +64,7 @@ class SubtitleStyle:
         self.fontsize = int(fontsize)
         self.primarycolour = primarycolour
         self.secondarycolour = secondarycolour
-        self.tertiarycolour = tertiarycolour
+        self.outlinecolour = outlinecolour
         self.backcolour = backcolour
         self.bold = int(bold)
         self.italic = int(italic)
@@ -81,7 +81,7 @@ class SubtitleStyle:
     def __str__(self):
         return (f'Style: {self.name},{self.fontname},{self.fontsize},'
                 f'&H{self.primarycolour},&H{self.secondarycolour},'
-                f'&H{self.tertiarycolour},&H{self.backcolour},'
+                f'&H{self.outlinecolour},&H{self.backcolour},'
                 f'{self.bold},' f'{self.italic},'
                 f'{self.borderstyle},{self.outline},'
                 f'{self.shadow},{self.alignment},{self.marginl},'
@@ -93,7 +93,7 @@ class SubtitleStyle:
                 self.fontsize == style.fontsize and
                 self.primarycolour == style.primarycolour and
                 self.secondarycolour == style.secondarycolour and
-                self.tertiarycolour == style.tertiarycolour and
+                self.outlinecolour == style.outlinecolour and
                 self.backcolour == style.backcolour and
                 self.bold == style.bold and
                 self.shadow == style.shadow and
@@ -114,7 +114,7 @@ class Subtitles:
 
 #      def __init__(self, name, fontname, fontsize=24,
 #                   primarycolour=0xffffff, secondarycolour=0xffffff,
-#                   tertiarycolour=0x000000, backcolour=0x000000,
+#                   outlinecolour=0x000000, backcolour=0x000000,
 #                   bold=-1, italic=0, borderstyle=1, outline=2,
 #                   shadow=3, alignment=2, marginl=20, marginr=20,
 #                   marginv=10, alphalevel=0, encoding=1):
@@ -158,7 +158,7 @@ class Subtitles:
 
         buf.write('[V4 Styles]\n')
         buf.write('Format: Name, Fontname, Fontsize, PrimaryColour, '
-                  'SecondaryColour, TertiaryColour, BackColour, Bold, '
+                  'SecondaryColour, OutlineColour, BackColour, Bold, '
                   'Italic, BorderStyle, Outline, Shadow, Alignment, '
                   'MarginL, MarginR, MarginV, AlphaLevel, Encoding\n')
         for style in self.styles:
