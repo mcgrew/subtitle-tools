@@ -7,7 +7,7 @@ from typing import Iterator
 from dataclasses import dataclass
 from glob import glob
 from multiprocessing.pool import Pool
-from PIL import Image
+from PIL import Image, ImageOps
 
 import ffmpeg
 from subtitles import Subtitles, SubtitleEntry
@@ -160,17 +160,17 @@ def read_image(image: str, oem: int = 1) -> Iterator[TextLine]:
     tool = pyocr.get_available_tools()[0]
 #      lang = tool.get_available_languages()[0]
     pil_img = Image.open(image)
+    tess_img = ImageOps.invert(ImageOps.grayscale(pil_img))
     (_, r), (_, g), (_, b) = pil_img.getextrema()
     if sum((r, g, b)) < 192:  # there's no text here
         return []
     builder = pyocr.builders.LineBoxBuilder()
     builder.tesseract_flags.extend(['--oem', str(oem)])
-    lineboxes = tool.image_to_string(pil_img, lang='eng', builder=builder)
+    lineboxes = tool.image_to_string(tess_img, lang='eng', builder=builder)
     start_time = int(image[-10:-4]) / FRAME_RATE
     results = []
     for linebox in lineboxes:
         ((x1, y1), (x2, y2)) = linebox.position
-#          r, g, b = text_color(pil_img, x1, y1, x2, y2)
 
         marginr = pil_img.width - x2
         reduce_margin = min(x1, marginr)
@@ -182,7 +182,7 @@ def read_image(image: str, oem: int = 1) -> Iterator[TextLine]:
         text = linebox.content
 
         if text.upper() == text or '0' in text:
-            verify = pil_img.crop((x1-10, y1-10, x2+10, y2+10))
+            verify = tess_img.crop((x1-10, y1-10, x2+10, y2+10))
             text = verify_text(text, verify)
         size = (y2 - y1)
         if has_descenders(text):
