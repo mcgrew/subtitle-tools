@@ -307,7 +307,7 @@ def merge_lines(lines: list[TextLine]):
                 line2.start = line2.end = -1.0  # mark this line for later
 
 
-def read_subtitles(infile, stream):
+def read_subtitles(infile, stream, duration):
     skip_cleanup = getenv('SUBCONVERT_SKIP_CLEANUP')
     subs = Subtitles(stream['width'], stream['height'])
 

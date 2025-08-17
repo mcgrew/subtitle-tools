@@ -17,14 +17,12 @@ SUBP_CODECS = ('hdmv_pgs_subtitle', 'dvd_subtitle', 'dvb_subtitle')
 def main(args):
 
     info = ffmpeg.info(args.input)
+    duration = float(info["format"]["duration"])
     sub_streams = []
-    video_stream = None
     for stream in info['streams']:
         match stream['codec_type']:
             case 'subtitle':
                 sub_streams.append(stream)
-            case 'video':
-                video_stream = video_stream or stream
 
     if not sub_streams:
         sys.stderr.write('No subtitles found in the input file, exiting...')
@@ -54,7 +52,7 @@ def main(args):
                              'pytesseract installed.\n')
             sys.stderr.write('Unable to convert subpicture subtitles.')
             exit(-1)
-        subs = ocr.read_subtitles(args.input, input_stream)
+        subs = ocr.read_subtitles(args.input, input_stream, duration)
     else:
         sys.stderr.write('Text subtitles are not yet supported for input. '
                          'Coming soon!')

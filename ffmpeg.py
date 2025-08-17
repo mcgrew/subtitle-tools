@@ -5,7 +5,7 @@ from shutil import which
 
 
 def info(filename: str):
-    command = ['ffprobe', '-show_chapters', '-show_streams',
+    command = ['ffprobe', '-show_chapters', '-show_streams', '-show_format',
                '-print_format', 'json', filename]
     ffprobe = subprocess.Popen(command, stdout=subprocess.PIPE,
                                stderr=subprocess.DEVNULL)
@@ -29,7 +29,7 @@ class Ffmpeg:
         self.extra_arguments = []
         self.start_time = 0
         self.end_time = 0
-        self.proc:subprocess.Popen = None
+        self.proc: subprocess.Popen = None
 
     def time_range(self, start: float | int = 0, end: float | int = 0):
         self.start_time = start
