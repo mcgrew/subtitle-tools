@@ -96,6 +96,7 @@ class SubtitleStyle:
                 self.outlinecolour == style.outlinecolour and
                 self.backcolour == style.backcolour and
                 self.bold == style.bold and
+                self.italic == style.italic and
                 self.shadow == style.shadow and
                 self.alignment == style.alignment and
                 self.marginl == style.marginl and

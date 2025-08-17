@@ -1,8 +1,7 @@
 
 import os
 import sys
-import pyocr
-from collections import defaultdict
+import tesseract
 from typing import Iterator
 from dataclasses import dataclass
 from glob import glob
@@ -21,18 +20,13 @@ class TextLine:
     start: float
     content: str
     size: int
+    italic: bool
+    bold: bool
     marginl: int
     marginr: int
     marginv: int
     color: tuple[int, int, int]
     end: float = 0
-
-    def __post_init__(self):
-        # fix the text to account for common errors
-        self.content = (self.content.strip()
-                        .replace('| ', 'I ')
-                        .replace('/ ', 'I ')
-                        .replace('1?', 'I?'))
 
     def __cmp__(self, textline):
         if self.start < textline.start:
@@ -88,118 +82,141 @@ def text_color(image: Image, x1: int, y1: int, x2: int, y2: int):
     return (r, g, b)
 
 
-def postprocess(subs: Subtitles):
-    def format_color(c: tuple[int]): return f'{c[2]:02X}{c[1]:02X}{c[0]:02X}'
-    styles = defaultdict(int)
-    for entry in subs.entries:
-        if isinstance(entry, SubtitleEntry):
-            styles[entry.size, entry.color] += 1
-
-    for i, (size, color) in enumerate(styles.keys()):
-        subs.style(f'Style{i}', 'MS Gothic', fontsize=size,
-                   primarycolour=color, secondarycolour=color)
-        for entry in subs.entries:
-            if isinstance(entry, SubtitleEntry):
-                print(size, color, entry.size, entry.color)
-                if (entry.size == size and
-                        entry.color == color):
-                    entry.style = f'Style{i}'
-
-
-def dump_subs(infile, stream):
+def dump_subs(infile, stream, duration):
     width = stream['width']
     height = stream['height']
     st_index = stream['index']
 
     ff = ffmpeg.Ffmpeg(f'{WORKDIR}/%06d.png').skip('audio')
-    ff.filter_complex(f"[1:v][0:{st_index}]overlay,mpdecimate[out]")
+    ff.filter_complex(f"[1:v][0:{st_index}]overlay,mpdecimate")
     ff.input(infile, None)
-    ff.input(f"color=size={width}x{height}:rate={FRAME_RATE}:color=black",
-             None).format('lavfi')
-    ff.map('[out]')
-    ff.time_range(0, 22 * 60)
+    ff.input(f"color=size={width}x{height}:rate={FRAME_RATE}:color=black"
+             f":duration={duration}", None).format('lavfi')
     ff.extra_args('-vsync', 'vfr', '-frame_pts', '1')
     ff.run()
 
 
-def verify_text(text: str, cropped: Image):
-    scaled = cropped.resize((int(cropped.width * 0.75),
-                             int(cropped.height * 0.75)))
-    sys.stderr.write(f'Checking: {text}\n')
-    tool = pyocr.get_available_tools()[0]
-    builder = pyocr.builders.TextBuilder()
-    builder.tesseract_flags.extend(['--oem', '1'])
-    text2 = tool.image_to_string(scaled, lang='eng', builder=builder)
-    if text == text2:
-        sys.stderr.write(f'Verified: {text}\n')
-        return text
-    scaled = cropped.reduce(2)
-    builder.tesseract_flags.extend(['--oem', '1'])
-    text3 = tool.image_to_string(scaled, lang='eng', builder=builder)
-    if text3 and text3 == text2:
-        sys.stderr.write(f'Corrected: {text} -> {text3}\n')
-        return text3
-    if text3 != text:
-        sys.stderr.write(f'Could not verify text: {text}, {text2}, {text3}\n')
+def fix_common(text: str | tesseract.Line | tesseract.Word):
+    """
+    Tesseract sometimes returns fancy quotes and other characters instead of
+    normal ones. This will swap those out.
+    This also corrects some common misreads.
+    """
+    replacements = {
+            '| ': 'I ',
+            '/ ': 'I ',
+            '1?': 'I?',
+            '\u2019': "'",
+            '\u201d': '"',
+            '\u201c': '"',
+    }
+    text = str(text).strip()
+    for err, repl in replacements.items():
+        if err in text:
+            text = text.replace(err, repl)
     return text
 
 
-def read_image(image: str, oem: int = 1) -> Iterator[TextLine]:
+def verify_text(text0: str, text1: str, cropped: tuple[Image]):
+    if text0 == text1:
+        return text0
+    prev_text = [text0, text1]
+    sys.stderr.write(f'Checking: {text0} | {text1}\n')
+    scaled = [c.resize((int(c.width * 0.75),
+              int(c.height * 0.75))) for c in cropped]
+    new_text = tesseract.simple_read(scaled[1], oem=1)
+    if new_text in prev_text:
+        sys.stderr.write(f'{text1} -> {new_text}\n')
+        return new_text
+    else:
+        prev_text.append(new_text)
+    new_text = tesseract.simple_read(scaled[0], oem=0)
+    if new_text in prev_text:
+        sys.stderr.write(f'{text1} -> {new_text}\n')
+        return new_text
+    else:
+        prev_text.append(new_text)
+
+    scaled = [c.reduce(2) for c in cropped]
+    new_text = tesseract.simple_read(scaled[1], oem=1)
+    if new_text in prev_text:
+        sys.stderr.write(f'{text1} -> {new_text}\n')
+        return new_text
+    else:
+        prev_text.append(new_text)
+    new_text = tesseract.simple_read(scaled[0], oem=0)
+    if new_text in prev_text:
+        sys.stderr.write(f'{text1} -> {new_text}\n')
+        return new_text
+    else:
+        prev_text.append(new_text)
+
+    new_text = tesseract.simple_read(scaled[1], oem=3)
+    if new_text in prev_text:
+        sys.stderr.write(f'{text1} -> {new_text}\n')
+    else:
+        sys.stderr.write(f'Could not verify text: Guessing {new_text}\n')
+    return new_text
+
+
+def read_image(image: str) -> Iterator[TextLine]:
     """
     Reads the text in an image and returns a list of lines in the format:
         timestamp, text, size, marginR, marginL, marginBottom, and text color
 
     args:
         image: The path to the image
-        oem: The tesseract engine to use:
-             0 = Original Tesseract only.
-             1 = Neural nets LSTM only.
-             2 = Tesseract + LSTM.
-             3 = System default, based on what is available.
     """
-    tool = pyocr.get_available_tools()[0]
-#      lang = tool.get_available_languages()[0]
     pil_img = Image.open(image)
-    tess_img = ImageOps.invert(ImageOps.grayscale(pil_img))
+    tess0_img = ImageOps.grayscale(pil_img)
+    tess1_img = ImageOps.invert(tess0_img)
     (_, r), (_, g), (_, b) = pil_img.getextrema()
     if sum((r, g, b)) < 192:  # there's no text here
         return []
-    builder = pyocr.builders.LineBoxBuilder()
-    builder.tesseract_flags.extend(['--oem', str(oem)])
-    lineboxes = tool.image_to_string(tess_img, lang='eng', builder=builder)
+    lines0 = tesseract.read_image(tess0_img, oem=0)
+    lines1 = tesseract.read_image(tess1_img, oem=1)
+    # check for a mismatch in the number of lines detected.
+    # in practice this should never happen, but...
+    match cmp := len(lines0) - len(lines1):
+        case 0:
+            pass
+        case _ if cmp < 0:
+            sys.stderr.write('ERROR: LINE COUNT MISMATCH!\n')
+            lines0 = lines1
+        case _ if cmp > 0:
+            sys.stderr.write('ERROR: LINE COUNT MISMATCH!\n')
+            lines1 = lines0
+
     start_time = int(image[-10:-4]) / FRAME_RATE
     results = []
-    for linebox in lineboxes:
-        ((x1, y1), (x2, y2)) = linebox.position
-
+    for line0, line1 in zip(lines0, lines1):
+        x1, y1, x2, y2 = line0.bbox
         marginr = pil_img.width - x2
         reduce_margin = min(x1, marginr)
         marginl = x1 - reduce_margin
         marginr -= reduce_margin
         marginv = (pil_img.height - y2)
-        text = linebox.content
+        text0 = fix_common(line0)
+        text1 = fix_common(line1)
+        verify_img = (tess0_img.crop((x1-10, y1-10, x2+10, y2+10)),
+                      tess1_img.crop((x1-10, y1-10, x2+10, y2+10)))
+        text = verify_text(text0, text1, verify_img)
 
-        if text.upper() == text or '0' in text:
-            verify = tess_img.crop((x1-10, y1-10, x2+10, y2+10))
-            text = verify_text(text, verify)
-        size = (y2 - y1)
+        size = line1.size * 1.5
         if has_descenders(text):
-            size = int(size * 1.33)
+            marginv -= int(size * 0.05)
         else:
             marginv -= int(size * 0.3)
-            size = int(size * 1.6)
         # find the most frequent color that's not dark
         cropped = pil_img.crop((x1, y1, x2, y2))
         colors = [c for c in cropped.getdata() if sum(c) >= 400]
-        sorted_colors = sorted([c for c in set(colors)], key=colors.count, reverse=True)
+        sorted_colors = sorted([c for c in set(colors)], key=colors.count,
+                               reverse=True)
         if sorted_colors[0][0] == 1:
             cropped.save(image.replace('work', 'cropped'))
-#          sorted_colors.sort(key=colors.count)
-#          sys.stderr.write(str(sorted_colors[:10]) + '\n')
-        results.append(TextLine(start_time, text, size, marginl, marginr,
+        results.append(TextLine(start_time, text, size, line0.italic,
+                                line0.bold, marginl, marginr,
                                 marginv, sorted_colors[0]))
-#      sys.stderr.write('=')
-#      sys.stderr.flush()
     return results
 
 
@@ -301,14 +318,15 @@ def read_subtitles(infile, stream):
         os.mkdir(WORKDIR)
         sys.stderr.write('Exporting subpicture subtitles...\n')
 
-    dump_subs(infile, stream)
+    dump_subs(infile, stream, duration)
     lines = list(read_subs(WORKDIR))
     normalize_values(lines, stream['height'])
     merge_lines(lines)
     for line in [s for s in lines if s.end >= 0]:
         color = f'{line.color[2]:02X}{line.color[1]:02X}{line.color[0]:02X}'
-        style = subs.style(fontname='Roboto', fontsize=line.size,
-                           primarycolour=color)  # , marginl=line.marginl,
+        style = subs.style(fontname='Open Sans SemiBold', fontsize=line.size,
+                           primarycolour=color, italic=line.italic,
+                           bold=line.bold)  # , marginl=line.marginl,
 #                             marginr=line.marginr, marginv=line.marginv)
         subs.entry(SubtitleEntry(line.content, line.start, line.end,
                                  style.name, marginl=line.marginl,

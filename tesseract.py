@@ -75,32 +75,77 @@ class Line:
                 f'{"bold" if self.has_bold else ""}')
 
 
-def build_lines(tess_output: str):
-    tree = ElementTree.fromstring(tess_output)
-    line_els = tree.findall('.//{http://www.w3.org/1999/xhtml}'
-                            'span[@class="ocr_line"]')
-    return [Line(el) for el in line_els]
-
-
-def read_image(image: str | Image.Image, engine: int = 0):
+def simple_read(image: str | Image.Image, oem: int = 0, lang: str = 'eng'
+                ) -> str:
+    """
+    Call tesseract to read the text in an image. This returns only text, with
+    no additional information.
+    @param image A PIL Image or a file name
+    @param oem Which tesseract engine to use. As of 5.x, the options are:
+        0 - The original engine
+        1 - The newer LSTM engine
+        2 - Both
+        3 - Default based on what is available
+    @param lang The language engine to use. The default is eng (English)
+        See the tesseract documentation for other options.
+    @return A string containing the text read.
+    """
     if isinstance(image, str):
         image = Image.open(image)
-    command = ['tesseract', '-', '-', '--oem', str(engine), 'hocr']
-    tesseract = subprocess.Popen(command, stdin=subprocess.PIPE,
-                                 stdout=subprocess.PIPE,
-                                 stderr=subprocess.DEVNULL)
     png = BytesIO()
     image.save(png, 'png')
     png.seek(0)
+    command = ('tesseract', '-', '-', '-l', lang,
+               '--oem', str(oem))
+    tesseract = subprocess.Popen(command, stdin=subprocess.PIPE,
+                                 stdout=subprocess.PIPE,
+                                 stderr=subprocess.DEVNULL)
     out, _ = tesseract.communicate(png.read())
     tesseract.wait()
-    return build_lines(out)
+    return out.decode('utf-8').strip()
+
+
+def read_image(image: str | Image.Image, oem: int = 0, lang: str = 'eng'
+               ) -> list[Line]:
+    """
+    Call tesseract to read the text in an image.
+    @param image A PIL Image or a file name
+    @param oem Which tesseract engine to use. As of 5.x, the options are:
+        0 - The original engine
+        1 - The newer LSTM engine
+        2 - Both
+        3 - Default based on what is available
+    @param lang The language engine to use. The default is eng (English)
+        See the tesseract documentation for other options.
+    @returns list[Line] A list of Line objects with each line of text.
+    """
+    if isinstance(image, str):
+        image = Image.open(image)
+    png = BytesIO()
+    image.save(png, 'png')
+    png.seek(0)
+    command = ('tesseract', '-', '-', '-l', lang,
+               '--oem', str(oem), 'hocr')
+    tesseract = subprocess.Popen(command, stdin=subprocess.PIPE,
+                                 stdout=subprocess.PIPE,
+                                 stderr=subprocess.DEVNULL)
+    out, _ = tesseract.communicate(png.read())
+    tesseract.wait()
+    tree = ElementTree.fromstring(out)
+    line_els = (el for el in
+                tree.findall('.//{http://www.w3.org/1999/xhtml}span')
+                if el.get('class') in ('ocr_line', 'ocr_header'))
+    return [Line(el) for el in line_els]
 
 
 if __name__ == '__main__':  # test code
     import sys
-    engine = 0
+    if len(sys.argv) < 2:
+        print('Please specify an input file')
+        exit(-1)
+
+    oem = 0
     if len(sys.argv) > 2:
-        engine = int(sys.argv[2])
-    for line in read_image(sys.argv[1], engine):
+        oem = int(sys.argv[2])
+    for line in read_image(sys.argv[1], oem):
         print(repr(line))
