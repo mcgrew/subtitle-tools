@@ -122,7 +122,7 @@ def fix_common(text: str | tesseract.Line | tesseract.Word):
 
 class SpellChecker:
     def __init__(self):
-        self.checker = which('ispell') or which('aspell')
+        self.checker = which('ispell')
 
     def check(self, detection_list):
         """
@@ -135,12 +135,24 @@ class SpellChecker:
         The first correct hit on each word gets used, but if none hit, the most
         frequent occurrence is used instead.
         """
+        # throw out any that don't have the same number of spaces
+        spaces = [d.count(' ') for d in detection_list]
+        # find the median (should always be an odd number of strings)
+        spaces = sorted(spaces)[len(spaces) // 2]
+        detection_list = [d for d in detection_list if d.count(' ') == spaces]
+
         words = zip(*(d.split() for d in detection_list))
         words = [sorted(w, key=w.count, reverse=True) for w in words]
         if not self.checker:
             return ' '.join(w[0] for w in words)
-        spell_input = '\n'.join(' '.join(w for w in x) for x in words)
-        spell = subprocess.Popen([self.checker, '-a'], stdin=subprocess.PIPE,
+
+        def strip(word):
+            return ''.join(c for c in word if c.isalpha() or c in "'-")
+        # join this all together and strip out any non-word characters
+        # isalpha() should also work on all non-english characters
+        spell_input = '\n'.join(' '.join(strip(w) for w in x) for x in words)
+        spell = subprocess.Popen([self.checker, '-a', '-W0'],
+                                 stdin=subprocess.PIPE,
                                  stdout=subprocess.PIPE,
                                  stderr=subprocess.DEVNULL)
         out, _ = spell.communicate(spell_input.encode('utf-8'))
@@ -148,7 +160,7 @@ class SpellChecker:
         final_string = []
         for line, line_result in zip(words, out):
             for word, result in zip(line, line_result):
-                if result == '*':
+                if result[0] in '*+':
                     final_string.append(word)
                     break
             else:  # yes this is weird, look up how python for else works
@@ -221,6 +233,7 @@ def read_image(image: str) -> Iterator[TextLine]:
         text = verify_text(text0, text1, verify_img)
 
         size = line1.size * 1.5
+#          sys.stderr.write(f"Size: {line1.size} -> {text1}\n")
         if has_descenders(text):
             marginv -= int(size * 0.05)
         else:
@@ -269,7 +282,7 @@ def freq_sort(values: list[int]) -> list[int]:
 
 
 def normalize_values(lines: list[TextLine], height: int = 1080,
-                     tolerance: float = 0.008) -> None:
+                     tolerance: float = 0.01) -> None:
     """
     Find the most frequently occurring values for size, margin, color, and
     normalize the lines to those values if they are close.
@@ -327,7 +340,7 @@ def merge_lines(lines: list[TextLine]):
                 line2.start = line2.end = -1.0  # mark this line for later
 
 
-def read_subtitles(infile, stream, duration):
+def read_subtitles(infile, stream, duration, font, skip_formatting=False):
     skip_cleanup = getenv('SUBCONVERT_SKIP_CLEANUP')
     subs = Subtitles(stream['width'], stream['height'])
 
@@ -344,7 +357,7 @@ def read_subtitles(infile, stream, duration):
     merge_lines(lines)
     for line in [s for s in lines if s.end >= 0]:
         color = f'{line.color[2]:02X}{line.color[1]:02X}{line.color[0]:02X}'
-        style = subs.style(fontname='Open Sans SemiBold', fontsize=line.size,
+        style = subs.style(fontname=font, fontsize=line.size,
                            primarycolour=color, italic=line.italic,
                            bold=line.bold)  # , marginl=line.marginl,
 #                             marginr=line.marginr, marginv=line.marginv)
