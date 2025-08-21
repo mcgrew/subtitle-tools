@@ -4,9 +4,11 @@ import subprocess
 from shutil import which
 
 
-def info(filename: str):
-    command = ['ffprobe', '-show_chapters', '-show_streams', '-show_format',
-               '-print_format', 'json', filename]
+def info(filename: str, ffprobe_binary: str | None = None):
+    if not ffprobe_binary:
+        ffprobe_binary = which('ffprobe')
+    command = [ffprobe_binary, '-show_chapters', '-show_streams',
+               '-show_format', '-print_format', 'json', filename]
     ffprobe = subprocess.Popen(command, stdout=subprocess.PIPE,
                                stderr=subprocess.DEVNULL)
     out, _ = ffprobe.communicate()
@@ -15,10 +17,9 @@ def info(filename: str):
 
 
 class Ffmpeg:
-    def __init__(self, output_file: str, command: str | None = None):
-        if command:
-            self.command = command
-        else:
+    def __init__(self, output_file: str, binary: str | None = None):
+        self.command = binary
+        if not self.command:
             self.command = which('ffmpeg')
         self.output_file = output_file
         self.inputs = []

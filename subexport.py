@@ -4,12 +4,8 @@ import sys
 from argparse import ArgumentParser
 
 import ffmpeg
+import ocr
 #  import subtitles
-
-try:
-    import ocr
-except ImportError:
-    ocr = None
 
 SUBP_CODECS = ('hdmv_pgs_subtitle', 'dvd_subtitle', 'dvb_subtitle')
 
@@ -28,31 +24,22 @@ def main(args):
         sys.stderr.write('No subtitles found in the input file, exiting...')
         exit(-1)
 
-#      if not args.output and not args.output_format:
-#          sys.stderr.write(
-#                  'No output file or output format specified, aborting...')
-#          exit(-1)
-#
-    if args.output_format in ('ass', None):
-        args.output_format = 'ssa'
-    if not args.output_format:
+    if not args.output_format and args.output:
         match args.output[-4:]:
             case '.srt':
                 args.output_format = 'srt'
             case '.ssa' | '.ass':
                 args.output_format = 'ssa'
+    if args.output_format in ('ass', None):
+        args.output_format = 'ssa'
 
     input_stream = sub_streams[args.subtitle_stream]
     if len(sub_streams) > 1:
         sys.stderr.write(f'Using subtitle stream {args.subtitle_stream} - '
                          f'{input_stream["codec_long_name"]}\n')
     if input_stream['codec_name'] in SUBP_CODECS:
-        if not ocr:
-            sys.stderr.write('OCR unsupported - make sure you have pyocr and '
-                             'pytesseract installed.\n')
-            sys.stderr.write('Unable to convert subpicture subtitles.')
-            exit(-1)
-        subs = ocr.read_subtitles(args.input, input_stream, duration)
+        subs = ocr.read_subtitles(args.input, input_stream, duration,
+                                  args.font, args.skip_formatting)
     else:
         sys.stderr.write('Text subtitles are not yet supported for input. '
                          'Coming soon!')
@@ -67,10 +54,29 @@ def main(args):
 
 
 if __name__ == '__main__':
-    argparser = ArgumentParser()
-    argparser.add_argument('-i', '--input', required=True)
-    argparser.add_argument('-s', '--subtitle-stream', type=int, default=0)
-    argparser.add_argument('-o', '--output', default=None)
-    argparser.add_argument('-f', '--output-format', default=None)
-    argparser.add_argument('--ssa-font', default='Roboto')
+    argparser = ArgumentParser(usage="Subtitle-tools v0.1-pre\n"
+                               "This application is intended to convert\n"
+                               "subpicture-based subtitles into ssa/srt\n"
+                               "format.\n"
+                               "Currently supported languages: English.")
+    argparser.add_argument('-i', '--input', required=True,
+                           help="The input file. Currently this should be a "
+                           "video file containing subtittles.")
+    argparser.add_argument('-s', '--subtitle-stream', type=int, default=0,
+                           help="Which subtitle stream to read from the video "
+                           "file. Default is the first subpicture stream.")
+    argparser.add_argument('-o', '--output', default=None,
+                           help="The file name for output. If unspecified, "
+                           "the file will be writtent to stdout.")
+    argparser.add_argument('-f', '--output-format', default=None,
+                           help="The output format for the subtitle file. "
+                           "Currently supported formats are ssa and srt. The "
+                           "default is ssa.")
+    argparser.add_argument('-t', '--font', default="FreeSans Bold",
+                           help="Specify a font for all subtitles. Default is "
+                           "'FreeSans'.")
+    argparser.add_argument('-k', '--skip-formatting', action="store_true",
+                           help="Skip all position and font size detection. "
+                           "This is useful for import into a subtitle editor "
+                           "when you want to perform manual formatting.")
     main(argparser.parse_args())

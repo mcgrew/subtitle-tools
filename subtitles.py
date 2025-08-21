@@ -1,5 +1,7 @@
 
 from io import StringIO
+from collections import defaultdict
+import re
 
 
 class SubtitleEntry:
@@ -58,7 +60,7 @@ class SubtitleStyle:
                  outlinecolour='000000', backcolour='000000',
                  bold=0, italic=0, borderstyle=1, outline=2,
                  shadow=3, alignment=2, marginl=20, marginr=20,
-                 marginv=20, alphalevel=0, encoding=1):
+                 marginv=20, alphalevel=0, encoding=1, **kwargs):
         self.name = name
         self.fontname = fontname
         self.fontsize = int(fontsize)
@@ -66,8 +68,8 @@ class SubtitleStyle:
         self.secondarycolour = secondarycolour
         self.outlinecolour = outlinecolour
         self.backcolour = backcolour
-        self.bold = int(bold)
-        self.italic = int(italic)
+        self.bold = bool(bold)
+        self.italic = bool(italic)
         self.borderstyle = int(borderstyle)
         self.outline = int(outline)
         self.shadow = int(shadow)
@@ -157,7 +159,7 @@ class Subtitles:
         buf.write(f'PlayResY: {self.height}\n')
         buf.write('Timer: 100.0000\n\n')
 
-        buf.write('[V4 Styles]\n')
+        buf.write('[V4+ Styles]\n')
         buf.write('Format: Name, Fontname, Fontsize, PrimaryColour, '
                   'SecondaryColour, OutlineColour, BackColour, Bold, '
                   'Italic, BorderStyle, Outline, Shadow, Alignment, '
