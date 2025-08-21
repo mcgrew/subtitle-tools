@@ -6,7 +6,10 @@ from typing import Iterator
 from dataclasses import dataclass
 from glob import glob
 from multiprocessing.pool import Pool
+from shutil import which
 from PIL import Image, ImageOps
+
+import subprocess
 
 import ffmpeg
 from subtitles import Subtitles, SubtitleEntry
@@ -117,46 +120,61 @@ def fix_common(text: str | tesseract.Line | tesseract.Word):
     return text
 
 
+class SpellChecker:
+    def __init__(self):
+        self.checker = which('ispell') or which('aspell')
+
+    def check(self, detection_list):
+        """
+        This all looks super complicated, so let me explain:
+
+        I'm taking the array of passed in strings, splitting them on the word
+        boundary, sorting each word position by frequency, and then running
+        them through a spell checker.
+
+        The first correct hit on each word gets used, but if none hit, the most
+        frequent occurrence is used instead.
+        """
+        words = zip(*(d.split() for d in detection_list))
+        words = [sorted(w, key=w.count, reverse=True) for w in words]
+        if not self.checker:
+            return ' '.join(w[0] for w in words)
+        spell_input = '\n'.join(' '.join(w for w in x) for x in words)
+        spell = subprocess.Popen([self.checker, '-a'], stdin=subprocess.PIPE,
+                                 stdout=subprocess.PIPE,
+                                 stderr=subprocess.DEVNULL)
+        out, _ = spell.communicate(spell_input.encode('utf-8'))
+        out = (o.split('\n') for o in out.decode('utf-8').split('\n\n'))
+        final_string = []
+        for line, line_result in zip(words, out):
+            for word, result in zip(line, line_result):
+                if result == '*':
+                    final_string.append(word)
+                    break
+            else:  # yes this is weird, look up how python for else works
+                # this happens if none of the words get a hit in ispell
+                final_string.append(line[0])
+        return ' '.join(final_string)
+
+
 def verify_text(text0: str, text1: str, cropped: tuple[Image]):
     if text0 == text1:
         return text0
-    prev_text = [text0, text1]
+    detected = [text0, text1]
     sys.stderr.write(f'Checking: {text0} | {text1}\n')
+    detected.append(tesseract.simple_read(cropped[1], oem=3))
+
     scaled = [c.resize((int(c.width * 0.75),
               int(c.height * 0.75))) for c in cropped]
-    new_text = tesseract.simple_read(scaled[1], oem=1)
-    if new_text in prev_text:
-        sys.stderr.write(f'{text1} -> {new_text}\n')
-        return new_text
-    else:
-        prev_text.append(new_text)
-    new_text = tesseract.simple_read(scaled[0], oem=0)
-    if new_text in prev_text:
-        sys.stderr.write(f'{text1} -> {new_text}\n')
-        return new_text
-    else:
-        prev_text.append(new_text)
+    detected.append(tesseract.simple_read(scaled[1], oem=1))
+    detected.append(tesseract.simple_read(scaled[0], oem=0))
 
     scaled = [c.reduce(2) for c in cropped]
-    new_text = tesseract.simple_read(scaled[1], oem=1)
-    if new_text in prev_text:
-        sys.stderr.write(f'{text1} -> {new_text}\n')
-        return new_text
-    else:
-        prev_text.append(new_text)
-    new_text = tesseract.simple_read(scaled[0], oem=0)
-    if new_text in prev_text:
-        sys.stderr.write(f'{text1} -> {new_text}\n')
-        return new_text
-    else:
-        prev_text.append(new_text)
-
-    new_text = tesseract.simple_read(scaled[1], oem=3)
-    if new_text in prev_text:
-        sys.stderr.write(f'{text1} -> {new_text}\n')
-    else:
-        sys.stderr.write(f'Could not verify text: Guessing {new_text}\n')
-    return new_text
+    detected.append(tesseract.simple_read(scaled[1], oem=1))
+    detected.append(tesseract.simple_read(scaled[0], oem=0))
+    result = SpellChecker().check(detected)
+    sys.stderr.write(f'{text1} -> {result}\n')
+    return result
 
 
 def read_image(image: str) -> Iterator[TextLine]:
@@ -222,6 +240,8 @@ def read_image(image: str) -> Iterator[TextLine]:
 
 def read_subs(directory) -> Iterator[TextLine]:
     skip_cleanup = getenv('SUBCONVERT_SKIP_CLEANUP')
+    if skip_cleanup:
+        sys.stderr.write("Temporary images will not be removed.\n")
     sys.stderr.write('Performing OCR...\n')
 
     images = sorted(glob(f'{directory}/*.png'))
